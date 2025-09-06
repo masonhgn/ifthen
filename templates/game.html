@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game - IfThen Logic Game</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+
+        <!-- Top Notification Bar -->
+        <div id="notification-bar" class="notification-bar" style="display: none;">
+            <div class="notification-content">
+                <span class="notification-icon"></span>
+                <span class="notification-message"></span>
+                <button class="notification-close" onclick="closeNotification()">×</button>
+            </div>
+        </div>
+
+        <main>
+            <!-- Loading overlay -->
+            <div id="loading-overlay" class="loading-overlay">
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p>Loading game...</p>
+                </div>
+            </div>
+            
+            <div class="game-container">
+                <!-- Game Header -->
+                <div class="game-header">
+                    <div class="game-title">🎯 IfThen Logic Game</div>
+                </div>
+
+                <!-- Main Game Area -->
+                <div class="game-main">
+                    <!-- Players Panel -->
+                    <div class="players-panel">
+                        <h3>Players:</h3>
+                        <div id="players-scores">
+                            <!-- Player scores will be populated by JavaScript -->
+                        </div>
+                    </div>
+
+                    <!-- Board Panel -->
+                    <div class="board-panel">
+                        <h3>Game Board:</h3>
+                        <div id="game-board">
+                            <!-- Board will be populated by JavaScript -->
+                        </div>
+                    </div>
+
+                    <!-- Actions Panel -->
+                    <div class="actions-panel" id="turn-actions" style="display: none;">
+                        <h3>Your Turn - Choose an Action:</h3>
+                        
+                        <!-- Game Status Info -->
+                        <div class="game-status-info">
+                            <div class="status-item">
+                                <span>Status:</span>
+                                <span id="game-status">Loading...</span>
+                            </div>
+                            <div class="status-item">
+                                <span>Active Turn:</span>
+                                <span id="turn-info">0</span>
+                            </div>
+                            <div class="status-item">
+                                <span>Current Turn:</span>
+                                <span id="current-player">Loading...</span>
+                            </div>
+                            <div class="status-item">
+                                <span>Score:</span>
+                                <span id="player-score">0</span>
+                            </div>
+                            <button id="solve-btn" class="solve-button" onclick="showSolvePage()">🧩 SOLVE</button>
+                        </div>
+                        
+                        <div class="action-buttons">
+                            <button id="guess-cell-btn" class="btn btn-action btn-primary">
+                                <span class="btn-icon">🎯</span>
+                                <span class="btn-text">Guess a Cell</span>
+                                <span class="btn-desc">Click on a cell to guess its contents</span>
+                            </button>
+                            <button id="share-clue-btn" class="btn btn-action btn-secondary">
+                                <span class="btn-icon">🤝</span>
+                                <span class="btn-text">Share a Clue</span>
+                                <span class="btn-desc">Give one of your clues to another player</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Clues Table - Bottom Anchored -->
+                <div class="clues-table">
+                    <h3>Your Clues:</h3>
+                    <div id="clues-container" class="clues-list">
+                        <!-- Clues will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="solution-modal modal" id="solution-modal" style="display: none;">
+                <div class="modal-content">
+                    <h3>Submit Solution</h3>
+                    <form id="solution-form">
+                        <div class="form-group">
+                            <label>Shape (optional):</label>
+                            <select id="solution-shape">
+                                <option value="">Select shape (optional)</option>
+                                <option value="circle">🟢 Circle</option>
+                                <option value="square">🟦 Square</option>
+                                <option value="star">⭐ Star</option>
+                                <option value="heart">❤️ Heart</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Number (optional):</label>
+                            <select id="solution-number">
+                                <option value="">Select number (optional)</option>
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                            </select>
+                        </div>
+                        <div class="form-help">
+                            <p><small>💡 You can guess just the shape, just the number, or both!</small></p>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">Submit Guess</button>
+                            <button type="button" id="cancel-solution" class="btn btn-secondary">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="clue-share-modal modal" id="clue-share-modal" style="display: none;">
+                <div class="modal-content">
+                    <h3>Share a Clue</h3>
+                    <form id="clue-share-form">
+                        <div class="form-group">
+                            <label>Select Clue to Share:</label>
+                            <select id="share-clue-select" required>
+                                <option value="">Choose a clue...</option>
+                                <!-- Options will be populated by JavaScript -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Share with Player:</label>
+                            <select id="share-player-select" required>
+                                <option value="">Choose a player...</option>
+                                <!-- Options will be populated by JavaScript -->
+                            </select>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">Share Clue</button>
+                            <button type="button" id="cancel-clue-share" class="btn btn-secondary">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <script>
+        const gameId = '{{ game_id }}';
+    </script>
+    <script src="{{ url_for('static', filename='js/game.js') }}"></script>
+</body>
+</html>
