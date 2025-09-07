@@ -23,7 +23,7 @@ set_debug(debug_enabled)
 
 # Print debug log location
 if debug_enabled:
-    print(f"🐛 Debug log will be written to: {get_debug_log_path()}")
+    print(f"Debug log will be written to: {get_debug_log_path()}")
 
 
 @debug_function

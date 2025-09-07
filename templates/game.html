@@ -6,7 +6,7 @@
     <title>Game - IfThen Logic Game</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body>
+<body class="game-page">
     <div class="container">
 
         <!-- Top Notification Bar -->
@@ -30,7 +30,7 @@
             <div class="game-container">
                 <!-- Game Header -->
                 <div class="game-header">
-                    <div class="game-title">🎯 IfThen Logic Game</div>
+                    <div class="game-title">IfThen Logic Game</div>
                 </div>
 
                 <!-- Main Game Area -->
@@ -73,17 +73,16 @@
                                 <span>Score:</span>
                                 <span id="player-score">0</span>
                             </div>
-                            <button id="solve-btn" class="solve-button" onclick="showSolvePage()">🧩 SOLVE</button>
                         </div>
                         
                         <div class="action-buttons">
                             <button id="guess-cell-btn" class="btn btn-action btn-primary">
-                                <span class="btn-icon">🎯</span>
+                                <span class="btn-icon">?</span>
                                 <span class="btn-text">Guess a Cell</span>
                                 <span class="btn-desc">Click on a cell to guess its contents</span>
                             </button>
                             <button id="share-clue-btn" class="btn btn-action btn-secondary">
-                                <span class="btn-icon">🤝</span>
+                                <span class="btn-icon">→</span>
                                 <span class="btn-text">Share a Clue</span>
                                 <span class="btn-desc">Give one of your clues to another player</span>
                             </button>
@@ -99,6 +98,9 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- Solve link at bottom -->
+            <a href="#" class="solve-link" onclick="showSolvePage(); return false;">solve</a>
 
             <div class="solution-modal modal" id="solution-modal" style="display: none;">
                 <div class="modal-content">
@@ -125,7 +127,7 @@
                             </select>
                         </div>
                         <div class="form-help">
-                            <p><small>💡 You can guess just the shape, just the number, or both!</small></p>
+                            <p><small>You can guess just the shape, just the number, or both!</small></p>
                         </div>
                         <div class="form-actions">
                             <button type="submit" class="btn btn-primary">Submit Guess</button>

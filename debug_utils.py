@@ -30,7 +30,7 @@ def clear_debug_log():
     try:
         if os.path.exists(DEBUG_LOG_FILE):
             os.remove(DEBUG_LOG_FILE)
-        print(f"🐛 Debug log cleared: {DEBUG_LOG_FILE}")
+        print(f"Debug log cleared: {DEBUG_LOG_FILE}")
     except Exception as e:
         print(f"Error clearing debug log: {e}")
 
@@ -194,7 +194,7 @@ def set_debug(enabled: bool):
     DEBUG = enabled
     if enabled:
         clear_debug_log()  # Clear the log when enabling debug
-    print(f"🐛 Debug mode {'enabled' if enabled else 'disabled'}")
+    print(f"Debug mode {'enabled' if enabled else 'disabled'}")
 
 
 def is_debug_enabled() -> bool:

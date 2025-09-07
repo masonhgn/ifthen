@@ -374,11 +374,11 @@ document.addEventListener('DOMContentLoaded', function() {
         // Update game status
         // Show a more meaningful status
         if (gameState.game_state === 'playing') {
-            gameStatus.textContent = '🎮 Active';
+            gameStatus.textContent = 'Active';
         } else if (gameState.game_state === 'waiting') {
-            gameStatus.textContent = '⏳ Waiting';
+            gameStatus.textContent = 'Waiting';
         } else if (gameState.game_state === 'finished') {
-            gameStatus.textContent = '🏁 Finished';
+            gameStatus.textContent = 'Finished';
         } else {
             gameStatus.textContent = gameState.game_state;
         }
