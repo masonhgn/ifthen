@@ -1,5 +1,5 @@
 """
-Debug utilities for the IfThen Logic Game server.
+Debug utilities for the MysticGrid server.
 """
 import functools
 import json
@@ -8,9 +8,9 @@ from datetime import datetime
 from typing import Any, Callable
 
 
-# Global debug flag
-DEBUG = True  # Set to False to disable debug output
-DEBUG_LOG_FILE = "debug.log"  # File to write debug output to
+# global debug flag
+DEBUG = True  # set to false to disable debug output
+DEBUG_LOG_FILE = "debug.log"  # file to write debug output to
 
 
 def write_debug_log(message: str):
@@ -49,31 +49,31 @@ def debug_function(func: Callable) -> Callable:
         if not DEBUG:
             return func(*args, **kwargs)
         
-        # Get function name and module
+        # get function name and module
         func_name = f"{func.__module__}.{func.__qualname__}"
         
-        # Format arguments
+        # format arguments
         args_str = ", ".join([repr(arg) for arg in args])
         kwargs_str = ", ".join([f"{k}={repr(v)}" for k, v in kwargs.items()])
         all_args = ", ".join(filter(None, [args_str, kwargs_str]))
         
-        # Log function call
+        # log function call
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        call_msg = f"[{timestamp}] 🔍 CALL: {func_name}({all_args})"
+        call_msg = f"[{timestamp}] CALL: {func_name}({all_args})"
         print(call_msg)
         write_debug_log(call_msg)
         
         try:
-            # Call the function
+            # call the function
             result = func(*args, **kwargs)
             
-            # Log return value
+            # log return value
             if result is None:
-                return_msg = f"[{timestamp}] ✅ RETURN: {func_name}() -> None"
+                return_msg = f"[{timestamp}] RETURN: {func_name}() -> None"
                 print(return_msg)
                 write_debug_log(return_msg)
             else:
-                # Try to format the result nicely
+                # try to format the result nicely
                 try:
                     if hasattr(result, 'to_dict'):
                         result_str = json.dumps(result.to_dict(), indent=2)
@@ -82,27 +82,27 @@ def debug_function(func: Callable) -> Callable:
                     else:
                         result_str = repr(result)
                     
-                    # Truncate very long results
+                    # truncate very long results
                     if len(result_str) > 500:
                         result_str = result_str[:500] + "... (truncated)"
                     
-                    return_msg = f"[{timestamp}] ✅ RETURN: {func_name}() -> {result_str}"
+                    return_msg = f"[{timestamp}] RETURN: {func_name}() -> {result_str}"
                     print(return_msg)
                     write_debug_log(return_msg)
                 except Exception:
-                    # Fallback to repr if JSON serialization fails
+                    # fallback to repr if json serialization fails
                     result_str = repr(result)
                     if len(result_str) > 500:
                         result_str = result_str[:500] + "... (truncated)"
-                    return_msg = f"[{timestamp}] ✅ RETURN: {func_name}() -> {result_str}"
+                    return_msg = f"[{timestamp}] RETURN: {func_name}() -> {result_str}"
                     print(return_msg)
                     write_debug_log(return_msg)
             
             return result
             
         except Exception as e:
-            # Log exceptions
-            error_msg = f"[{timestamp}] ❌ ERROR: {func_name}() -> Exception: {type(e).__name__}: {str(e)}"
+            # log exceptions
+            error_msg = f"[{timestamp}] ERROR: {func_name}() -> Exception: {type(e).__name__}: {str(e)}"
             print(error_msg)
             write_debug_log(error_msg)
             raise
@@ -125,33 +125,33 @@ def debug_method(func: Callable) -> Callable:
         if not DEBUG:
             return func(self, *args, **kwargs)
         
-        # Get method name and class
+        # get method name and class
         class_name = self.__class__.__name__
         method_name = func.__name__
         full_name = f"{class_name}.{method_name}"
         
-        # Format arguments (skip self)
+        # format arguments (skip self)
         args_str = ", ".join([repr(arg) for arg in args])
         kwargs_str = ", ".join([f"{k}={repr(v)}" for k, v in kwargs.items()])
         all_args = ", ".join(filter(None, [args_str, kwargs_str]))
         
-        # Log method call
+        # log method call
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        call_msg = f"[{timestamp}] 🔍 CALL: {full_name}({all_args})"
+        call_msg = f"[{timestamp}] CALL: {full_name}({all_args})"
         print(call_msg)
         write_debug_log(call_msg)
         
         try:
-            # Call the method
+            # call the method
             result = func(self, *args, **kwargs)
             
-            # Log return value
+            # log return value
             if result is None:
-                return_msg = f"[{timestamp}] ✅ RETURN: {full_name}() -> None"
+                return_msg = f"[{timestamp}] RETURN: {full_name}() -> None"
                 print(return_msg)
                 write_debug_log(return_msg)
             else:
-                # Try to format the result nicely
+                # try to format the result nicely
                 try:
                     if hasattr(result, 'to_dict'):
                         result_str = json.dumps(result.to_dict(), indent=2)
@@ -160,27 +160,27 @@ def debug_method(func: Callable) -> Callable:
                     else:
                         result_str = repr(result)
                     
-                    # Truncate very long results
+                    # truncate very long results
                     if len(result_str) > 500:
                         result_str = result_str[:500] + "... (truncated)"
                     
-                    return_msg = f"[{timestamp}] ✅ RETURN: {full_name}() -> {result_str}"
+                    return_msg = f"[{timestamp}] RETURN: {full_name}() -> {result_str}"
                     print(return_msg)
                     write_debug_log(return_msg)
                 except Exception:
-                    # Fallback to repr if JSON serialization fails
+                    # fallback to repr if json serialization fails
                     result_str = repr(result)
                     if len(result_str) > 500:
                         result_str = result_str[:500] + "... (truncated)"
-                    return_msg = f"[{timestamp}] ✅ RETURN: {full_name}() -> {result_str}"
+                    return_msg = f"[{timestamp}] RETURN: {full_name}() -> {result_str}"
                     print(return_msg)
                     write_debug_log(return_msg)
             
             return result
             
         except Exception as e:
-            # Log exceptions
-            error_msg = f"[{timestamp}] ❌ ERROR: {full_name}() -> Exception: {type(e).__name__}: {str(e)}"
+            # log exceptions
+            error_msg = f"[{timestamp}] ERROR: {full_name}() -> Exception: {type(e).__name__}: {str(e)}"
             print(error_msg)
             write_debug_log(error_msg)
             raise
@@ -193,7 +193,7 @@ def set_debug(enabled: bool):
     global DEBUG
     DEBUG = enabled
     if enabled:
-        clear_debug_log()  # Clear the log when enabling debug
+        clear_debug_log()  # clear the log when enabling debug
     print(f"Debug mode {'enabled' if enabled else 'disabled'}")
 
 

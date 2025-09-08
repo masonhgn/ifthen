@@ -1,5 +1,6 @@
 import uuid
 import json
+import threading
 from datetime import datetime
 from typing import Dict, Optional, Any
 from game import Board, Cell, Clue
@@ -16,7 +17,6 @@ class Player:
         self.websocket = None
         self.current_lobby_id = None
         self.current_game_id = None
-        self.score = 0
         self.connected = False
         self.joined_at = datetime.now()
     
@@ -42,10 +42,6 @@ class Player:
                 print(f"Error sending message to player {self.player_id}: {e}")
                 self.disconnect()
     
-    @debug_method
-    def update_score(self, points: int):
-        """Update player's score."""
-        self.score += points
     
     @debug_method
     def to_dict(self) -> dict:
@@ -53,7 +49,6 @@ class Player:
         return {
             'player_id': self.player_id,
             'name': self.name,
-            'score': self.score,
             'connected': self.connected,
             'current_lobby_id': self.current_lobby_id,
             'current_game_id': self.current_game_id
@@ -143,13 +138,16 @@ class GameSession:
         self.game_state = "waiting"  # waiting, playing, finished
         self.current_turn = None
         self.turn_count = 0
+        self.max_turns = 50  # Shared turn pool - adjust difficulty here
         self.player_turns: Dict[str, int] = {}  # player_id -> turn count
         self.solved_cells: Dict[tuple, dict] = {}  # (r,c) -> {"player_id": str, "solution": Cell}
         self.revealed_clues: Dict[str, list] = {}  # player_id -> list of clue indices
         self.shared_clues: Dict[str, list] = {}  # player_id -> list of clues shared with them
         self.created_at = datetime.now()
-        self.winner = None
+        self.game_start_time = None  # When the game actually starts
+        self.game_duration = 900  # 15 minutes in seconds
         self.clues_distributed = False  # Track if clues have been distributed
+        self._initialization_lock = threading.Lock()  # Thread safety for initialization
     
     @debug_method
     def add_player(self, player: Player) -> bool:
@@ -171,20 +169,23 @@ class GameSession:
     
     @debug_method
     def _initialize_board_and_clues(self):
-        """Lazy initialization of board and clues."""
+        """Lazy initialization of board and clues with thread safety."""
         if self.board is None:
-            import time
-            board_start_time = time.time()
-            print(f"[TIMING] About to create board at: {board_start_time:.3f}s")
-            self.board = Board(self.board_size)
-            board_time = time.time()
-            print(f"[TIMING] Board created at: {board_time:.3f}s (took {board_time - board_start_time:.3f}s)")
-            
-            print(f"[TIMING] About to generate clues at: {time.time():.3f}s")
-            self.clues = self.board.generate_all_clues()
-            clues_time = time.time()
-            print(f"[TIMING] Clues generated at: {clues_time:.3f}s (took {clues_time - board_time:.3f}s)")
-            print(f"[TIMING] Total board+clues initialization: {clues_time - board_start_time:.3f}s")
+            with self._initialization_lock:
+                # Double-check pattern to prevent race conditions
+                if self.board is None:
+                    import time
+                    board_start_time = time.time()
+                    print(f"[TIMING] About to create board at: {board_start_time:.3f}s")
+                    self.board = Board(self.board_size)
+                    board_time = time.time()
+                    print(f"[TIMING] Board created at: {board_time:.3f}s (took {board_time - board_start_time:.3f}s)")
+                    
+                    print(f"[TIMING] About to generate clues at: {time.time():.3f}s")
+                    self.clues = self.board.generate_all_clues()
+                    clues_time = time.time()
+                    print(f"[TIMING] Clues generated at: {clues_time:.3f}s (took {clues_time - board_time:.3f}s)")
+                    print(f"[TIMING] Total board+clues initialization: {clues_time - board_start_time:.3f}s")
     
     @debug_method
     def start_game(self) -> bool:
@@ -199,6 +200,7 @@ class GameSession:
         self.distribute_clues()
         
         self.game_state = "playing"
+        self.game_start_time = datetime.now()
         return True
     
     @debug_method
@@ -207,38 +209,43 @@ class GameSession:
         if self.clues_distributed:
             return
         
-        # Ensure board and clues are initialized
-        self._initialize_board_and_clues()
-        
-        import random
-        
-        # Calculate clues per player (aim for 6-8 clues each for better solvability)
-        num_players = len(self.players)
-        total_clues = len(self.clues)
-        clues_per_player = max(6, total_clues // num_players)
-        
-        print(f"DEBUG: Distributing {total_clues} total clues among {num_players} players ({clues_per_player} each)")
-        
-        # Shuffle all clue indices
-        all_clue_indices = list(range(total_clues))
-        random.shuffle(all_clue_indices)
-        
-        # Distribute clues to each player
-        player_ids = list(self.players.keys())
-        for i, player_id in enumerate(player_ids):
-            start_idx = i * clues_per_player
-            end_idx = min(start_idx + clues_per_player, total_clues)
+        with self._initialization_lock:
+            # Double-check pattern to prevent race conditions
+            if self.clues_distributed:
+                return
             
-            # Give this player their clues
-            self.revealed_clues[player_id] = all_clue_indices[start_idx:end_idx]
-            print(f"DEBUG: Player {i+1} gets {len(self.revealed_clues[player_id])} clues")
+            # Ensure board and clues are initialized
+            self._initialize_board_and_clues()
             
-            # If this is the last player and there are remaining clues, give them the extras
-            if i == len(player_ids) - 1 and end_idx < total_clues:
-                self.revealed_clues[player_id].extend(all_clue_indices[end_idx:])
-                print(f"DEBUG: Player {i+1} gets {len(all_clue_indices[end_idx:])} extra clues")
-        
-        self.clues_distributed = True
+            import random
+            
+            # Calculate clues per player (aim for 6-8 clues each for better solvability)
+            num_players = len(self.players)
+            total_clues = len(self.clues)
+            clues_per_player = max(6, total_clues // num_players)
+            
+            print(f"DEBUG: Distributing {total_clues} total clues among {num_players} players ({clues_per_player} each)")
+            
+            # Shuffle all clue indices
+            all_clue_indices = list(range(total_clues))
+            random.shuffle(all_clue_indices)
+            
+            # Distribute clues to each player
+            player_ids = list(self.players.keys())
+            for i, player_id in enumerate(player_ids):
+                start_idx = i * clues_per_player
+                end_idx = min(start_idx + clues_per_player, total_clues)
+                
+                # Give this player their clues
+                self.revealed_clues[player_id] = all_clue_indices[start_idx:end_idx]
+                print(f"DEBUG: Player {i+1} gets {len(self.revealed_clues[player_id])} clues")
+                
+                # If this is the last player and there are remaining clues, give them the extras
+                if i == len(player_ids) - 1 and end_idx < total_clues:
+                    self.revealed_clues[player_id].extend(all_clue_indices[end_idx:])
+                    print(f"DEBUG: Player {i+1} gets {len(all_clue_indices[end_idx:])} extra clues")
+            
+            self.clues_distributed = True
     
     @debug_method
     def _remove_redundant_clues(self, row: int, col: int, shape: str, number: int):
@@ -299,21 +306,37 @@ class GameSession:
     @debug_method
     def submit_solution(self, player_id: str, position: tuple, guess: dict) -> dict:
         """Submit a solution for a cell position."""
+        print(f"[DEBUG] submit_solution called - game_state: {self.game_state}, player_id: {player_id}, current_turn: {self.current_turn}")
+        
         if self.game_state != "playing":
-            return {"success": False, "error": "Game not in playing state"}
+            print(f"[DEBUG] Game not in playing state: {self.game_state}")
+            # TEMPORARY FIX: Allow submission even when game_state is "finished" for debugging
+            if self.game_state == "finished":
+                print(f"[DEBUG] Allowing submission despite finished state for debugging")
+            else:
+                return {"success": False, "error": "Game not in playing state"}
         
         if player_id not in self.players:
+            print(f"[DEBUG] Player not in game: {player_id}")
             return {"success": False, "error": "Player not in game"}
         
         if player_id != self.current_turn:
+            print(f"[DEBUG] Not player's turn: {player_id} != {self.current_turn}")
             return {"success": False, "error": "Not your turn"}
         
         # Ensure board and clues are initialized
         self._initialize_board_and_clues()
         
         r, c = position
+        # Check if cell is fully solved (both shape and number revealed)
         if (r, c) in self.solved_cells:
-            return {"success": False, "error": "Cell already solved"}
+            existing = self.solved_cells[(r, c)]
+            print(f"[DEBUG] Cell ({r}, {c}) already in solved_cells: shape_revealed={existing['revealed']['shape']}, number_revealed={existing['revealed']['number']}")
+            if existing["revealed"]["shape"] and existing["revealed"]["number"]:
+                print(f"[DEBUG] Cell ({r}, {c}) is fully solved, rejecting guess")
+                return {"success": False, "error": "Cell already fully solved"}
+            else:
+                print(f"[DEBUG] Cell ({r}, {c}) is partially solved, allowing update")
         
         # Validate the guess
         actual_cell = self.board.board[r][c]
@@ -324,15 +347,14 @@ class GameSession:
         shape_correct = guessed_shape is None or actual_cell.shape == guessed_shape
         number_correct = guessed_number is None or actual_cell.number == guessed_number
         
-        # Calculate points and penalties
-        points = 0
-        penalty = 0
+        # Check if solution is correct
+        success = False
         
         if shape_correct and number_correct:
             # Both correct (or both not guessed)
             if guessed_shape and guessed_number:
                 # Complete correct guess
-                points = 10
+                success = True
                 self.solved_cells[(r, c)] = {
                     "player_id": player_id,
                     "solution": {
@@ -347,7 +369,7 @@ class GameSession:
                 }
             else:
                 # Partial guess, both parts correct
-                points = 5
+                success = True
                 # Update existing entry or create new one
                 if (r, c) in self.solved_cells:
                     # Update existing partial solution
@@ -369,61 +391,114 @@ class GameSession:
                         },
                         "solved_at": datetime.now().isoformat()
                     }
-        else:
-            # At least one part wrong
-            if guessed_shape and not shape_correct:
-                penalty += 2
-            if guessed_number and not number_correct:
-                penalty += 2
-        
-        # Apply score changes
-        if points > 0:
-            self.players[player_id].update_score(points)
-        if penalty > 0:
-            self.players[player_id].update_score(-penalty)
         
         # Remove redundant clues if cell was solved
-        if points > 0:
+        if success:
             self._remove_redundant_clues(r, c, actual_cell.shape, actual_cell.number)
         
         # Move to next turn
+        print(f"[DEBUG] About to call next_turn() - success: {success}")
         self.next_turn()
+        print(f"[DEBUG] After next_turn() - current_turn: {self.current_turn}")
         
-        # Check if game is complete
-        if len(self.solved_cells) == self.board.size * self.board.size:
-            self.game_state = "finished"
-            self.winner = max(self.players.values(), key=lambda p: p.score)
+        # Calculate game metrics (needed for return values)
+        total_cells = self.board.size * self.board.size
+        # Count only fully solved cells (both shape and number revealed)
+        cells_solved = sum(1 for cell_data in self.solved_cells.values() 
+                          if cell_data["revealed"]["shape"] and cell_data["revealed"]["number"])
+        turns_remaining = self.max_turns - self.turn_count
+        time_remaining = self.get_time_remaining()
         
-        if points > 0:
+        print(f"[DEBUG] Game metrics calculated:")
+        print(f"  - max_turns: {self.max_turns}")
+        print(f"  - turn_count: {self.turn_count}")
+        print(f"  - turns_remaining: {turns_remaining}")
+        print(f"  - total_cells: {total_cells}")
+        print(f"  - cells_solved (fully): {cells_solved}")
+        print(f"  - total_solved_cells (partial+full): {len(self.solved_cells)}")
+        print(f"  - time_remaining: {time_remaining}")
+        
+        # Check if game is complete (all cells solved, turns exhausted, or time up)
+        # Only check if game is still in playing state
+        if self.game_state == "playing":
+            print(f"[DEBUG] Game completion check:")
+            print(f"  - total_cells: {total_cells}")
+            print(f"  - cells_solved: {cells_solved}")
+            print(f"  - turns_remaining: {turns_remaining}")
+            print(f"  - time_remaining: {time_remaining}")
+            print(f"  - current game_state: {self.game_state}")
+            print(f"  - turn_count: {self.turn_count}")
+            print(f"  - max_turns: {self.max_turns}")
+            print(f"  - game_start_time: {self.game_start_time}")
+            print(f"  - solved_cells count: {len(self.solved_cells)}")
+            print(f"  - board size: {self.board.size if self.board else 'None'}")
+            
+            if cells_solved >= total_cells:
+                print(f"[DEBUG] Game finished: All cells solved ({cells_solved}/{total_cells})")
+                self.game_state = "finished"
+            elif turns_remaining <= 0:
+                print(f"[DEBUG] Game finished: No turns remaining ({turns_remaining})")
+                self.game_state = "finished"
+            elif time_remaining <= 0:
+                print(f"[DEBUG] Game finished: Time up ({time_remaining})")
+                self.game_state = "finished"
+            else:
+                print(f"[DEBUG] Game continues - not finished yet")
+        else:
+            print(f"[DEBUG] Skipping game completion check - game state is: {self.game_state}")
+        
+        if success:
             return {
                 "success": True, 
-                "points": points, 
-                "penalty": penalty,
                 "game_complete": self.game_state == "finished",
-                "cell_solved": (r, c) in self.solved_cells
+                "cell_solved": (r, c) in self.solved_cells,
+                "cells_remaining": total_cells - cells_solved,
+                "turns_remaining": turns_remaining,
+                "time_remaining": time_remaining
             }
         else:
             return {
                 "success": False, 
                 "error": "Incorrect guess", 
-                "penalty": penalty,
                 "shape_correct": shape_correct,
-                "number_correct": number_correct
+                "number_correct": number_correct,
+                "cells_remaining": total_cells - cells_solved,
+                "turns_remaining": turns_remaining,
+                "time_remaining": time_remaining
             }
     
     
     @debug_method
+    def get_time_remaining(self) -> int:
+        """Get remaining time in seconds."""
+        if not self.game_start_time or self.game_state != "playing":
+            return self.game_duration
+        
+        elapsed = (datetime.now() - self.game_start_time).total_seconds()
+        remaining = max(0, self.game_duration - elapsed)
+        return int(remaining)
+    
+    @debug_method
     def next_turn(self):
         """Move to the next player's turn."""
+        print(f"[DEBUG] next_turn called - current_turn: {self.current_turn}, players: {list(self.players.keys())}")
+        
         if not self.players:
+            print(f"[DEBUG] No players, returning")
             return
         
         player_ids = list(self.players.keys())
         current_index = player_ids.index(self.current_turn) if self.current_turn in player_ids else 0
         next_index = (current_index + 1) % len(player_ids)
+        old_turn = self.current_turn
         self.current_turn = player_ids[next_index]
+        
+        # Increment turn count only when a turn is actually completed
+        # This represents the number of completed turns, not the current turn number
         self.turn_count += 1
         self.player_turns[self.current_turn] += 1
+        
+        print(f"[DEBUG] Turn advanced: {old_turn} -> {self.current_turn}, turn_count: {self.turn_count}")
     
     @debug_method
     def share_clue(self, from_player_id: str, to_player_id: str, clue_index: int) -> dict:
@@ -460,6 +535,12 @@ class GameSession:
         # Add to receiver's shared clues (they keep their original clues)
         self.shared_clues[to_player_id].append(clue_index)
         
+        # Remove the clue from the sender's revealed clues (they no longer have it)
+        if clue_index in self.revealed_clues[from_player_id]:
+            self.revealed_clues[from_player_id].remove(clue_index)
+        elif clue_index in self.shared_clues[from_player_id]:
+            self.shared_clues[from_player_id].remove(clue_index)
+        
         # Move to next turn
         self.next_turn()
         
@@ -495,6 +576,11 @@ class GameSession:
             if p_id not in self.player_turns:
                 self.player_turns[p_id] = 0
         
+        # Ensure current_turn is set if not already set
+        if self.current_turn is None and self.players:
+            self.current_turn = list(self.players.keys())[0]
+            print(f"[DEBUG] Set current_turn to first player: {self.current_turn}")
+        
         # Get all clues available to this player (revealed + shared)
         print(f"[TIMING] About to process clues at: {time.time():.3f}s")
         all_clue_indices = set(self.revealed_clues.get(player_id, []))
@@ -508,6 +594,18 @@ class GameSession:
         # Pre-compute player data to avoid multiple to_dict() calls
         players_data = [p.to_dict() for p in self.players.values()]
         
+        # Calculate collaborative metrics
+        total_cells = self.board.size * self.board.size
+        # Count only fully solved cells (both shape and number revealed)
+        cells_solved = sum(1 for cell_data in self.solved_cells.values() 
+                          if cell_data["revealed"]["shape"] and cell_data["revealed"]["number"])
+        cells_remaining = total_cells - cells_solved
+        turns_remaining = self.max_turns - self.turn_count
+        time_remaining = self.get_time_remaining()
+        
+        # Calculate is_my_turn
+        is_my_turn = self.current_turn == player_id
+        
         result = {
             'session_id': self.session_id,
             'game_state': self.game_state,
@@ -515,13 +613,29 @@ class GameSession:
             'players': players_data,
             'current_turn': self.current_turn,
             'turn_count': self.turn_count,
+            'max_turns': self.max_turns,
+            'turns_remaining': turns_remaining,
+            'time_remaining': time_remaining,
+            'cells_solved': cells_solved,
+            'cells_remaining': cells_remaining,
+            'total_cells': total_cells,
             'player_turns': self.player_turns.get(player_id, 0),
             'solved_cells': solved_cells_dict,
             'clues': player_clues,
-            'winner': self.winner.to_dict() if self.winner else None,
-            'player_score': self.players[player_id].score if player_id in self.players else 0,
-            'is_my_turn': self.current_turn == player_id
+            'is_my_turn': is_my_turn
         }
+        
+        # Debug logging for turn information
+        print(f"[DEBUG] Game state for player {player_id}:")
+        print(f"  - current_turn: {self.current_turn}")
+        print(f"  - is_my_turn: {is_my_turn}")
+        print(f"  - game_state: {self.game_state}")
+        print(f"  - players: {[p.player_id for p in self.players.values()]}")
+        print(f"  - turn_count: {self.turn_count}")
+        print(f"  - max_turns: {self.max_turns}")
+        print(f"  - cells_solved: {len(self.solved_cells)}")
+        print(f"  - total_cells: {total_cells}")
+        print(f"  - time_remaining: {time_remaining}")
         
         final_time = time.time()
         print(f"[TIMING] get_game_state_for_player completed at: {final_time:.3f}s (total time: {final_time - state_start_time:.3f}s)")
@@ -536,6 +650,7 @@ class GameManager:
         self.lobbies: Dict[str, Lobby] = {}
         self.game_sessions: Dict[str, GameSession] = {}
         self.players: Dict[str, Player] = {}
+        self._cleanup_lock = threading.Lock()  # Thread safety for cleanup
     
     @debug_method
     def create_player(self, player_id: str = None, name: str = None) -> Player:
@@ -620,8 +735,11 @@ class GameManager:
         # Initialize the game (this will set up turn order, etc.)
         # But board/clues will be generated lazily when first accessed
         game_session.game_state = "playing"
+        game_session.game_start_time = datetime.now()  # Set start time when game begins
         game_session.current_turn = list(game_session.players.keys())[0]  # Set first player as current turn
         print(f"DEBUG: Set current turn to: {game_session.current_turn}")
+        print(f"DEBUG: Set game_state to: {game_session.game_state}")
+        print(f"DEBUG: Game session created with {len(game_session.players)} players")
         
         # Store game session
         self.game_sessions[game_id] = game_session
@@ -675,3 +793,48 @@ class GameManager:
             'total_players': len(self.players),
             'connected_players': sum(1 for p in self.players.values() if p.connected)
         }
+    
+    @debug_method
+    def cleanup_finished_games(self):
+        """Clean up finished games and inactive players."""
+        with self._cleanup_lock:
+            # Clean up finished games
+            finished_games = []
+            for game_id, game in self.game_sessions.items():
+                if game.game_state == "finished":
+                    # Check if game has been finished for more than 1 hour
+                    if game.game_start_time:
+                        time_since_finish = datetime.now() - game.game_start_time
+                        if time_since_finish.total_seconds() > 3600:  # 1 hour
+                            finished_games.append(game_id)
+            
+            for game_id in finished_games:
+                print(f"[CLEANUP] Removing finished game: {game_id}")
+                del self.game_sessions[game_id]
+            
+            # Clean up inactive players (disconnected for more than 2 hours)
+            inactive_players = []
+            for player_id, player in self.players.items():
+                if not player.connected:
+                    time_since_join = datetime.now() - player.joined_at
+                    if time_since_join.total_seconds() > 7200:  # 2 hours
+                        inactive_players.append(player_id)
+            
+            for player_id in inactive_players:
+                print(f"[CLEANUP] Removing inactive player: {player_id}")
+                del self.players[player_id]
+            
+            if finished_games or inactive_players:
+                print(f"[CLEANUP] Cleaned up {len(finished_games)} games and {len(inactive_players)} players")
+    
+    @debug_method
+    def cleanup_empty_lobbies(self):
+        """Clean up empty lobbies."""
+        with self._cleanup_lock:
+            empty_lobbies = [lobby_id for lobby_id, lobby in self.lobbies.items() if not lobby.players]
+            for lobby_id in empty_lobbies:
+                print(f"[CLEANUP] Removing empty lobby: {lobby_id}")
+                del self.lobbies[lobby_id]
+            
+            if empty_lobbies:
+                print(f"[CLEANUP] Cleaned up {len(empty_lobbies)} empty lobbies")

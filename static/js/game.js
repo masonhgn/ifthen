@@ -13,8 +13,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const gameBoard = document.getElementById('game-board');
     const playersScores = document.getElementById('players-scores');
     const gameStatus = document.getElementById('game-status');
-    const playerScore = document.getElementById('player-score');
-    const turnInfo = document.getElementById('turn-info');
+    const timeRemaining = document.getElementById('time-remaining');
+    const turnsRemaining = document.getElementById('turns-remaining');
+    const cellsRemaining = document.getElementById('cells-remaining');
     const currentPlayer = document.getElementById('current-player');
     const solutionModal = document.getElementById('solution-modal');
     const solutionForm = document.getElementById('solution-form');
@@ -29,12 +30,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const cancelClueShare = document.getElementById('cancel-clue-share');
     const loadingOverlay = document.getElementById('loading-overlay');
     const cluesList = document.getElementById('clues-container');
+    const yourTurnBanner = document.getElementById('your-turn-banner');
     
     let playerId = null;
     let gameState = null;
     let selectedCell = null;
     let lastUpdateTime = Date.now();
     let pollingInterval = null;
+    let timerInterval = null;
 
     // Get player info from sessionStorage
     playerId = sessionStorage.getItem('player_id');
@@ -43,6 +46,16 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('Player ID from sessionStorage:', playerId);
     console.log('Player name from sessionStorage:', playerName);
     console.log('Game ID from template:', gameId);
+    
+    // Validate that we have the required data
+    if (!playerId) {
+        console.error('No player ID found in sessionStorage');
+        showStatus('Error: No player ID found. Please return to the main page.', 'error');
+    }
+    if (!gameId) {
+        console.error('No game ID found in template');
+        showStatus('Error: No game ID found. Please check the URL.', 'error');
+    }
     
     // Show loading overlay initially
     showLoadingOverlay();
@@ -109,13 +122,20 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log(`[TIMING] Connected to server at: ${connectTime.toFixed(2)}ms (${(connectTime - pageLoadTime).toFixed(2)}ms after page load)`);
         showStatus('Connected to game server', 'success');
         
-        // Join the game
-        const joinEmitTime = performance.now();
-        console.log(`[TIMING] Emitting join_game at: ${joinEmitTime.toFixed(2)}ms (${(joinEmitTime - connectTime).toFixed(2)}ms after connect)`);
-        socket.emit('join_game', {
-            game_id: gameId,
-            player_id: playerId
-        });
+        // Always try to join the game normally first
+        if (gameId && playerId) {
+            const joinEmitTime = performance.now();
+            console.log(`[TIMING] Emitting join_game at: ${joinEmitTime.toFixed(2)}ms (${(joinEmitTime - connectTime).toFixed(2)}ms after connect)`);
+            console.log(`[DEBUG] Joining game with gameId: ${gameId}, playerId: ${playerId}`);
+            socket.emit('join_game', {
+                game_id: gameId,
+                player_id: playerId
+            });
+        } else {
+            console.error('Cannot join game: missing gameId or playerId');
+            console.error(`gameId: ${gameId}, playerId: ${playerId}`);
+            showStatus('Error: Missing game or player information', 'error');
+        }
         
         // Start periodic polling as backup (every 5 seconds)
         startPeriodicPolling();
@@ -131,13 +151,71 @@ document.addEventListener('DOMContentLoaded', function() {
         const disconnectTime = performance.now();
         console.log(`[TIMING] WebSocket disconnected at: ${disconnectTime.toFixed(2)}ms (${(disconnectTime - pageLoadTime).toFixed(2)}ms after page load)`, reason);
         
-        // Stop polling
+        // Stop polling and timer
         stopPeriodicPolling();
+        stopTimer();
         
-        // Redirect to home after 2 seconds
+        // Show disconnect message
+        showStatus('Connection lost. Attempting to reconnect...', 'error');
+        
+        // Try to reconnect after a short delay
         setTimeout(() => {
-            window.location.href = '/';
-        }, 2000);
+            if (!socket.connected) {
+                showStatus('Reconnection failed. Redirecting to home...', 'error');
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 2000);
+            }
+        }, 5000);
+    });
+    
+    socket.on('player_disconnected', function(data) {
+        console.log('Player disconnected:', data);
+        showStatus(`${data.player_name} disconnected`, 'info');
+        if (data.game_state) {
+            gameState = data.game_state;
+            updateGameDisplay();
+        }
+    });
+    
+    socket.on('player_reconnected', function(data) {
+        console.log('Player reconnected:', data);
+        showStatus(`${data.player_name} reconnected`, 'success');
+        if (data.game_state) {
+            gameState = data.game_state;
+            updateGameDisplay();
+        }
+    });
+    
+    socket.on('turn_skipped', function(data) {
+        console.log('Turn skipped:', data);
+        showStatus(`${data.skipped_player} disconnected, turn passed to ${data.new_turn}`, 'info');
+        if (data.game_state) {
+            gameState = data.game_state;
+            updateGameDisplay();
+        }
+    });
+    
+    socket.on('game_ended', function(data) {
+        console.log('Game ended:', data);
+        if (data.reason === 'insufficient_players') {
+            showStatus('Game ended: Not enough players remaining', 'error');
+        }
+        if (data.game_state) {
+            gameState = data.game_state;
+            updateGameDisplay();
+        }
+    });
+    
+    socket.on('game_reconnected', function(data) {
+        console.log('Game reconnected:', data);
+        showStatus('Successfully reconnected to game!', 'success');
+        if (data.game_state) {
+            gameState = data.game_state;
+            updateGameDisplay();
+            startTimer();
+            hideLoadingOverlay(); // Hide loading overlay on reconnection
+        }
     });
 
     socket.on('game_joined', function(data) {
@@ -159,21 +237,22 @@ document.addEventListener('DOMContentLoaded', function() {
             gameState = data.game_state;
         }
         updateGameDisplay();
-        showStatus(`${data.player_id} solved a cell for ${data.points} points!`, 'info');
+        showStatus(`${data.player_id} solved a cell!`, 'info');
         // Hide loading overlay once we have game state
         hideLoadingOverlay();
     });
 
     socket.on('game_complete', function(data) {
         console.log('Game complete:', data);
-        showStatus(`Game Complete! Winner: ${data.winner.name}`, 'success');
+        const winnerName = data.winner && data.winner.name ? data.winner.name : 'Unknown';
+        showStatus(`Game Complete! Winner: ${winnerName}`, 'success');
         // Disable further interactions
         gameBoard.style.pointerEvents = 'none';
     });
 
     socket.on('solution_accepted', function(data) {
         console.log('Solution accepted:', data);
-        let message = `Correct! +${data.points} points`;
+        let message = `Correct! +${data.points || 0} points`;
         if (data.penalty > 0) {
             message += ` (penalty: -${data.penalty})`;
         }
@@ -233,10 +312,12 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('Current turn:', data.current_turn);
         console.log('Is my turn:', data.is_my_turn);
         console.log('My player ID:', playerId);
+        console.log('Game state:', data.game_state);
         console.log('Timestamp:', new Date().toISOString());
         gameState = data;
         lastUpdateTime = Date.now(); // Update timestamp
         updateGameDisplay();
+        startTimer(); // Start the countdown timer
         // Hide loading overlay once we have game state
         hideLoadingOverlay();
     });
@@ -246,6 +327,7 @@ document.addEventListener('DOMContentLoaded', function() {
         gameState = data;
         lastUpdateTime = Date.now(); // Update timestamp
         updateGameDisplay();
+        startTimer(); // Start the countdown timer
         // Hide loading overlay once we have game state
         hideLoadingOverlay();
     });
@@ -357,6 +439,8 @@ document.addEventListener('DOMContentLoaded', function() {
             guess: guess
         });
         console.log('Submit timestamp:', new Date().toISOString());
+        console.log('Socket connected:', socket.connected);
+        console.log('Current game state:', gameState);
 
         // Don't do immediate UI update - let's fix the root cause instead
 
@@ -366,6 +450,8 @@ document.addEventListener('DOMContentLoaded', function() {
             position: selectedCell,
             guess: guess
         });
+        
+        console.log('submit_solution event emitted');
     });
 
     function updateGameDisplay() {
@@ -383,21 +469,20 @@ document.addEventListener('DOMContentLoaded', function() {
             gameStatus.textContent = gameState.game_state;
         }
         
-        // Update turn information
-        turnInfo.textContent = `Turn: ${gameState.turn_count}`;
+        // Update collaborative metrics
+        timeRemaining.textContent = formatTime(gameState.time_remaining || 0);
+        turnsRemaining.textContent = gameState.turns_remaining || 0;
+        cellsRemaining.textContent = gameState.cells_remaining || 0;
         
         // Update current player display
         const currentPlayerName = gameState.players.find(p => p.player_id === gameState.current_turn)?.name || 'Unknown';
-        currentPlayer.textContent = `Current Turn: ${currentPlayerName}`;
-        
-        // Update player score
-        playerScore.textContent = `Score: ${gameState.player_score}`;
+        currentPlayer.textContent = currentPlayerName;
 
         // Update game board
         updateGameBoard();
 
-        // Update players scores
-        updatePlayersScores();
+        // Update players list (no scores)
+        updatePlayersList();
 
         // Update clues
         if (gameState.clues) {
@@ -406,6 +491,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Update turn actions UI
         updateTurnActionsUI();
+        
+        // Add flashing yellow border for current player
+        if (gameState.is_my_turn) {
+            document.body.classList.add('your-turn-indicator');
+            if (yourTurnBanner) {
+                yourTurnBanner.classList.add('show');
+            }
+            console.log('DEBUG: Added flashing yellow border - it is your turn!');
+            
+            // Show a subtle notification if this is a new turn
+            if (gameState.current_turn === playerId) {
+                showStatus('It\'s your turn! Choose an action below.', 'info');
+            }
+        } else {
+            document.body.classList.remove('your-turn-indicator');
+            if (yourTurnBanner) {
+                yourTurnBanner.classList.remove('show');
+            }
+            console.log('DEBUG: Removed turn indicator - not your turn');
+        }
     }
 
     function updateGameBoard() {
@@ -454,7 +559,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         cell.addEventListener('click', function() {
                             console.log('Partially solved cell clicked:', r, c);
                             console.log('Is my turn:', gameState.is_my_turn);
-                            if (gameState.is_my_turn) {
+                            console.log('Game state:', gameState.game_state);
+                            if (gameState.game_state !== 'playing') {
+                                showStatus('Game is finished', 'error');
+                            } else if (gameState.is_my_turn) {
                                 openSolutionModal(r, c);
                             } else {
                                 showStatus('Wait for your turn to guess cells', 'error');
@@ -466,7 +574,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     cell.addEventListener('click', function() {
                         console.log('Cell clicked:', r, c);
                         console.log('Is my turn:', gameState.is_my_turn);
-                        if (gameState.is_my_turn) {
+                        console.log('Game state:', gameState.game_state);
+                        if (gameState.game_state !== 'playing') {
+                            showStatus('Game is finished', 'error');
+                        } else if (gameState.is_my_turn) {
                             openSolutionModal(r, c);
                         } else {
                             showStatus('Wait for your turn to guess cells', 'error');
@@ -479,19 +590,43 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function updatePlayersScores() {
+    function updatePlayersList() {
         if (!gameState) return;
 
         playersScores.innerHTML = '';
         gameState.players.forEach(player => {
             const div = document.createElement('div');
-            div.className = 'player-score';
+            div.className = 'player-item';
+            
+            // Add classes for different states
+            if (player.player_id === gameState.current_turn) {
+                div.classList.add('current-player');
+            }
+            if (!player.connected) {
+                div.classList.add('disconnected');
+            }
+            
+            // Create status indicators
+            let statusText = '';
+            if (player.player_id === playerId) {
+                statusText = '<span class="player-status">(You)</span>';
+            }
+            if (!player.connected) {
+                statusText += '<span class="disconnect-status">(Disconnected)</span>';
+            }
+            
             div.innerHTML = `
-                <strong>${player.name}</strong>: ${player.score} points
-                ${player.player_id === playerId ? ' (You)' : ''}
+                <span class="player-name">${player.name}</span>
+                ${statusText}
             `;
             playersScores.appendChild(div);
         });
+    }
+    
+    function formatTime(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
     }
 
     function updateCluesDisplay(clues) {
@@ -538,17 +673,48 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateTurnActionsUI() {
-        if (!gameState) return;
+        if (!gameState) {
+            console.log('DEBUG: updateTurnActionsUI called but no gameState');
+            return;
+        }
 
-        console.log('DEBUG: updateTurnActionsUI called - is_my_turn:', gameState.is_my_turn, 'game_state:', gameState.game_state);
+        console.log('DEBUG: updateTurnActionsUI called');
+        console.log('  - is_my_turn:', gameState.is_my_turn);
+        console.log('  - game_state:', gameState.game_state);
+        console.log('  - current_turn:', gameState.current_turn);
+        console.log('  - my player_id:', playerId);
+        console.log('  - turnActions element:', turnActions);
+        console.log('  - turnActions element exists:', !!turnActions);
+        console.log('  - turnActions current display:', turnActions ? turnActions.style.display : 'N/A');
         
         // Show/hide turn actions based on turn
         if (gameState.is_my_turn && gameState.game_state === 'playing') {
-            console.log('DEBUG: Showing turn actions');
-            turnActions.style.display = 'block';
+            console.log('DEBUG: Showing turn actions - it is my turn and game is playing');
+            if (turnActions) {
+                turnActions.style.display = 'block';
+                console.log('DEBUG: Turn actions element display set to block');
+                console.log('DEBUG: Turn actions element display after setting:', turnActions.style.display);
+                
+                // Force a reflow to ensure the change takes effect
+                turnActions.offsetHeight;
+                
+                // Check if it's actually visible
+                const computedStyle = window.getComputedStyle(turnActions);
+                console.log('DEBUG: Computed display style:', computedStyle.display);
+                console.log('DEBUG: Computed visibility style:', computedStyle.visibility);
+            } else {
+                console.error('DEBUG: turnActions element not found!');
+            }
         } else {
-            console.log('DEBUG: Hiding turn actions');
-            turnActions.style.display = 'none';
+            console.log('DEBUG: Hiding turn actions - not my turn or game not playing');
+            console.log('  - is_my_turn check:', gameState.is_my_turn);
+            console.log('  - game_state check:', gameState.game_state === 'playing');
+            if (turnActions) {
+                turnActions.style.display = 'none';
+                console.log('DEBUG: Turn actions element display set to none');
+            } else {
+                console.error('DEBUG: turnActions element not found!');
+            }
         }
     }
 
@@ -630,12 +796,12 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Set the icon based on type
         const icons = {
-            success: '✅',
-            error: '❌',
-            info: 'ℹ️',
-            warning: '⚠️'
+            success: 'SUCCESS',
+            error: 'ERROR',
+            info: 'INFO',
+            warning: 'WARNING'
         };
-        notificationIcon.textContent = icons[type] || 'ℹ️';
+        notificationIcon.textContent = icons[type] || 'INFO';
         
         // Set the notification type
         notificationBar.className = `notification-bar ${type}`;
@@ -688,6 +854,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // Clean up on page unload
     window.addEventListener('beforeunload', function() {
         stopPeriodicPolling();
+        stopTimer();
+        
+        // Try to notify server about leaving (may not work due to browser closing)
+        if (socket && socket.connected && playerId) {
+            socket.emit('leave_game', {
+                game_id: gameId,
+                player_id: playerId
+            });
+        }
     });
     
     function showLoadingOverlay() {
@@ -701,8 +876,152 @@ document.addEventListener('DOMContentLoaded', function() {
             loadingOverlay.style.display = 'none';
         }
     }
+    
+    function startTimer() {
+        // Clear any existing timer
+        if (timerInterval) {
+            clearInterval(timerInterval);
+        }
+        
+        // Start new timer that updates every second
+        timerInterval = setInterval(() => {
+            if (gameState && gameState.time_remaining !== undefined) {
+                // Decrement time locally for smooth display
+                if (gameState.time_remaining > 0) {
+                    gameState.time_remaining--;
+                    if (timeRemaining) {
+                        timeRemaining.textContent = formatTime(gameState.time_remaining);
+                    }
+                } else {
+                    // Time's up
+                    clearInterval(timerInterval);
+                    if (timeRemaining) {
+                        timeRemaining.textContent = '0:00';
+                    }
+                }
+            }
+        }, 1000);
+    }
+    
+    function stopTimer() {
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+    }
 
     // Game state will be loaded automatically when joining the game
+    
+    // Debug function - call this from browser console to test turn interface
+    window.debugTurnInterface = function() {
+        console.log('=== DEBUG TURN INTERFACE ===');
+        console.log('gameState:', gameState);
+        console.log('playerId:', playerId);
+        console.log('turnActions element:', turnActions);
+        console.log('turnActions exists:', !!turnActions);
+        if (turnActions) {
+            console.log('turnActions display:', turnActions.style.display);
+            console.log('turnActions computed display:', window.getComputedStyle(turnActions).display);
+            console.log('turnActions computed visibility:', window.getComputedStyle(turnActions).visibility);
+        }
+        
+        if (gameState) {
+            console.log('is_my_turn:', gameState.is_my_turn);
+            console.log('game_state:', gameState.game_state);
+            console.log('current_turn:', gameState.current_turn);
+            
+            // Force show the turn actions
+            if (turnActions) {
+                turnActions.style.display = 'block';
+                turnActions.style.visibility = 'visible';
+                console.log('Forced turn actions to be visible');
+            }
+            
+            // Force add turn indicator
+            document.body.classList.add('your-turn-indicator');
+            console.log('Forced turn indicator to be visible');
+        }
+        console.log('=== END DEBUG ===');
+    };
+    
+    // Debug function to manually trigger turn interface update
+    window.forceUpdateTurnInterface = function() {
+        console.log('Forcing turn interface update...');
+        updateTurnActionsUI();
+    };
+    
+    // Debug function to test solution submission
+    window.testSolutionSubmission = function() {
+        console.log('=== TESTING SOLUTION SUBMISSION ===');
+        console.log('gameId:', gameId);
+        console.log('playerId:', playerId);
+        console.log('gameState:', gameState);
+        console.log('socket connected:', socket.connected);
+        console.log('is_my_turn:', gameState ? gameState.is_my_turn : 'N/A');
+        console.log('game_state:', gameState ? gameState.game_state : 'N/A');
+        console.log('current_turn:', gameState ? gameState.current_turn : 'N/A');
+        
+        if (!gameId || !playerId) {
+            console.error('Missing gameId or playerId');
+            return;
+        }
+        
+        // Test with a simple guess
+        const testGuess = {
+            game_id: gameId,
+            player_id: playerId,
+            position: [0, 0],
+            guess: { shape: 'circle' }
+        };
+        
+        console.log('Sending test solution:', testGuess);
+        socket.emit('submit_solution', testGuess);
+    };
+    
+    // Debug function to check game state
+    window.debugGameState = function() {
+        console.log('=== GAME STATE DEBUG ===');
+        console.log('gameId:', gameId);
+        console.log('playerId:', playerId);
+        console.log('gameState:', gameState);
+        console.log('turnActions element:', turnActions);
+        console.log('turnActions display:', turnActions ? turnActions.style.display : 'N/A');
+        console.log('turnActions computed display:', turnActions ? window.getComputedStyle(turnActions).display : 'N/A');
+        console.log('selectedCell:', selectedCell);
+        console.log('socket connected:', socket.connected);
+    };
+    
+    // Debug function to reset game state (for testing)
+    window.resetGameState = function() {
+        console.log('=== RESETTING GAME STATE ===');
+        if (gameState) {
+            gameState.game_state = 'playing';
+            console.log('Reset game_state to playing');
+            updateGameDisplay();
+        } else {
+            console.log('No gameState to reset');
+        }
+    };
+    
+    // Debug function to reset server-side game state
+    window.resetServerGameState = function() {
+        console.log('=== RESETTING SERVER GAME STATE ===');
+        if (gameId) {
+            socket.emit('debug_reset_game_state', { game_id: gameId });
+            console.log('Sent debug_reset_game_state request');
+        } else {
+            console.log('No gameId available');
+        }
+    };
+    
+    // Listen for debug responses
+    socket.on('debug_response', function(data) {
+        console.log('Debug response:', data);
+        if (data.message.includes('reset')) {
+            // Request fresh game state after reset
+            socket.emit('get_game_state', { game_id: gameId });
+        }
+    });
 });
 
 // Solve button functionality

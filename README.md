@@ -1,6 +1,6 @@
-# IfThen Logic Game
+# MysticGrid
 
-A multiplayer logic puzzle game where players solve a grid using logical clues!
+A collaborative multiplayer puzzle game where players work together to solve a mystical grid using logical clues!
 
 ## Features
 
