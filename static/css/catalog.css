@@ -14,15 +14,15 @@ body {
     color: #e0e0e0;
     line-height: 1.6;
     min-height: 100vh;
-    display: flex;
-    flex-direction: column;
+    margin: 0;
+    padding: 0;
 }
 
 .container {
     max-width: 1200px;
     margin: 0 auto;
     padding: 0 20px;
-    flex: 1;
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
 }
@@ -34,7 +34,9 @@ body {
     align-items: center;
     padding: 20px 0;
     border-bottom: 2px solid #333;
-    margin-bottom: 40px;
+    margin-bottom: 0;
+    flex-shrink: 0;
+    width: 100%;
 }
 
 .nav-brand {
@@ -87,6 +89,13 @@ body {
     align-items: center;
     justify-content: center;
     text-align: center;
+    padding: 60px 0;
+    min-height: calc(100vh - 120px);
+}
+
+.center-text {
+    max-width: 600px;
+    margin: 0 auto;
 }
 
 .center-text h1 {
@@ -105,7 +114,29 @@ body {
 }
 
 /* Games Page Styles */
-.games-grid {
+.games-page {
+    flex: 1;
+    padding: 40px 0;
+}
+
+.games-header {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.games-header h1 {
+    font-size: 24px;
+    color: #00ff00;
+    text-shadow: 0 0 10px #00ff00;
+    margin-bottom: 10px;
+}
+
+.games-header p {
+    font-size: 10px;
+    color: #888;
+}
+
+.games-grid-small {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: 30px;
@@ -187,13 +218,23 @@ body {
 
 /* Responsive Design */
 @media (max-width: 768px) {
+    .container {
+        padding: 0 15px;
+    }
+    
     .navbar {
         flex-direction: column;
         gap: 20px;
+        padding: 15px 0;
     }
     
     .nav-links {
         gap: 20px;
+    }
+    
+    .home-content {
+        padding: 40px 0;
+        min-height: calc(100vh - 100px);
     }
     
     .center-text h1 {
@@ -204,8 +245,12 @@ body {
         font-size: 8px;
     }
     
-    .games-grid {
+    .games-grid-small {
         grid-template-columns: 1fr;
         gap: 20px;
+    }
+    
+    .games-page {
+        padding: 20px 0;
     }
 }
