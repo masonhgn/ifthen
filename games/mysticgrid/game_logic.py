@@ -3,8 +3,8 @@ import json
 import threading
 from datetime import datetime
 from typing import Dict, Optional, Any
-from game import Board, Cell, Clue
-from debug_utils import debug_method, debug_function
+from .board_logic import Board, Cell, Clue
+from shared.debug_utils import debug_method, debug_function
 
 
 class Player:

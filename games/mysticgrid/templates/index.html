@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MysticGrid</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='games/mysticgrid/css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>MysticGrid</h1>
+            <p>Solve the puzzle using logical clues!</p>
+        </header>
+
+        <main>
+            <div class="game-setup">
+                <h2>Start a New Game</h2>
+                <form id="create-lobby-form">
+                    <div class="form-group">
+                        <label for="player-name">Your Name:</label>
+                        <input type="text" id="player-name" name="player_name" placeholder="Enter your name" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Create Lobby</button>
+                </form>
+            </div>
+
+            <div class="join-game">
+                <h2>Join Existing Game</h2>
+                <form id="join-lobby-form">
+                    <div class="form-group">
+                        <label for="lobby-id">Lobby ID:</label>
+                        <input type="text" id="lobby-id" name="lobby_id" placeholder="Enter lobby ID" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="join-player-name">Your Name:</label>
+                        <input type="text" id="join-player-name" name="player_name" placeholder="Enter your name" required>
+                    </div>
+                    <button type="submit" class="btn btn-secondary">Join Lobby</button>
+                </form>
+            </div>
+
+            <div id="status-message" class="status-message"></div>
+        </main>
+
+        <footer>
+            <p>Share the lobby link with friends to play together!</p>
+        </footer>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <script src="{{ url_for('static', filename='games/mysticgrid/js/main.js') }}"></script>
+</body>
+</html>

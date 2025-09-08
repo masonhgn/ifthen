@@ -82,8 +82,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     socket.on('lobby_joined', function(data) {
         console.log('Joined lobby:', data);
-        playerId = data.player_id;
-        sessionStorage.setItem('player_id', playerId);
+        // Don't overwrite playerId - it should already be set correctly
+        // Only update sessionStorage if the server returned a different ID
+        if (data.player_id && data.player_id !== playerId) {
+            console.log('Server returned different player ID, updating:', data.player_id);
+            playerId = data.player_id;
+            sessionStorage.setItem('player_id', playerId);
+        }
         updateLobbyState(data.lobby_state);
     });
 
@@ -240,7 +245,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function checkLobbyState() {
         // First, try to get the current lobby state via API
-        fetch(`/api/lobby/${lobbyId}`)
+        fetch(`/mysticgrid/api/lobby/${lobbyId}`)
             .then(response => response.json())
             .then(data => {
                 console.log('Lobby state:', data);

@@ -1027,5 +1027,5 @@ document.addEventListener('DOMContentLoaded', function() {
 // Solve button functionality
 function showSolvePage() {
     const gameId = window.location.pathname.split('/').pop();
-    window.open(`/game/${gameId}/solve`, '_blank');
+    window.open(`/mysticgrid/game/${gameId}/solve`, '_blank');
 }

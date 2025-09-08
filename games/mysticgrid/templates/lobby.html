@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lobby - MysticGrid</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='games/mysticgrid/css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Game Lobby</h1>
+            <p>Waiting for players to join...</p>
+        </header>
+
+        <main>
+            <!-- Name Input Modal -->
+            <div class="name-modal" id="name-modal">
+                <div class="modal-content">
+                    <h3>Join Lobby</h3>
+                    <form id="name-form">
+                        <div class="form-group">
+                            <label for="player-name-input">Your Name:</label>
+                            <input type="text" id="player-name-input" name="player_name" placeholder="Enter your name" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Join Lobby</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="lobby-info" id="lobby-info" style="display: none;">
+                <div class="lobby-details">
+                    <h2>Lobby ID: <span id="lobby-id">{{ lobby_id }}</span></h2>
+                    <div class="lobby-url-container">
+                        <p>Share this link with friends:</p>
+                        <div class="url-input-group">
+                            <input type="text" id="lobby-url" readonly>
+                            <button id="copy-link-btn" class="copy-btn" title="Copy link">
+                                <i class="copy-icon">📋</i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="players-list">
+                    <h3>Players in Lobby:</h3>
+                    <ul id="players-list">
+                        <!-- Players will be populated by JavaScript -->
+                    </ul>
+                </div>
+
+                <div class="game-controls">
+                    <button id="start-game-btn" class="btn btn-primary" disabled>
+                        <span id="start-btn-text">Start Game</span>
+                        <span id="start-btn-loading" style="display: none;">Starting...</span>
+                    </button>
+                    <button id="leave-lobby-btn" class="btn btn-secondary">Leave Lobby</button>
+                </div>
+            </div>
+
+            <div id="status-message" class="status-message"></div>
+        </main>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <script>
+        const lobbyId = '{{ lobby_id }}';
+    </script>
+    <script src="{{ url_for('static', filename='games/mysticgrid/js/lobby.js') }}"></script>
+</body>
+</html>

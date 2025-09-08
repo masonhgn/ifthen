@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solve - MysticGrid</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='games/mysticgrid/css/style.css') }}">
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body class="solve-page">
+    <div class="solve-container">
+        <a href="javascript:if(window.opener) { window.close(); } else { window.location.href = window.location.pathname.replace('/solve', ''); }" class="back-button">← Back to Game</a>
+        
+        <div class="solve-header">
+            <h1>Clue Dependency Tree</h1>
+            <p style="color: #7f8c8d; font-style: italic;">Visualize how clues connect to solve the puzzle</p>
+        </div>
+        
+        <!-- Board Display -->
+        <div class="visualization-section">
+            <h2 class="section-title">Actual Board Solution</h2>
+            <div class="board-display">
+                {% for row in board.board %}
+                    {% for cell in row %}
+                        <div class="board-cell">
+                            <div class="number">{{ cell.number }}</div>
+                            <div class="shape">
+                                {% if cell.shape == 'circle' %}🟢
+                                {% elif cell.shape == 'square' %}🟦
+                                {% elif cell.shape == 'star' %}⭐
+                                {% elif cell.shape == 'heart' %}❤️
+                                {% else %}{{ cell.shape }}{% endif %}
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% endfor %}
+            </div>
+        </div>
+        
+        <!-- Interactive Network Visualization -->
+        <div class="visualization-section">
+            <h2 class="section-title">Interactive Dependency Tree</h2>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color root"></div>
+                    <span>🔴 Explicit Clues (Direct starting points)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #3498db;"></div>
+                    <span>🔵 Conditional Clues (IF-THEN deductions)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color row-constraint"></div>
+                    <span>🟠 Row Constraints (Row-level rules)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color col-constraint"></div>
+                    <span>🟣 Column Constraints (Column-level rules)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #3498db; width: 20px; height: 3px; border-radius: 2px;"></div>
+                    <span>🔵 Blue Arrows (Deduction flow)</span>
+                </div>
+            </div>
+            <div id="debug-info" style="background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 5px; font-family: monospace; font-size: 12px;">
+                <strong>Debug Info:</strong><br>
+                Board Size: {{ board.size }}<br>
+                Total Clues: {{ clues|length }}<br>
+                <span id="debug-details"></span>
+            </div>
+            <div id="network-container"></div>
+        </div>
+        
+        <!-- Clues List -->
+        <div class="visualization-section">
+            <h2 class="section-title">All Clues</h2>
+            <div class="clues-list">
+                {% for clue in clues %}
+                    <div class="clue-item {{ 'explicit' if clue.clue_type.value == 1 else 'conditional' if clue.clue_type.value == 3 else 'general' }}">
+                        <div class="clue-type {{ 'explicit' if clue.clue_type.value == 1 else 'conditional' if clue.clue_type.value == 3 else 'general' }}">
+                            {% if clue.clue_type.value == 1 %}
+                                EXPLICIT
+                            {% elif clue.clue_type.value == 2 %}
+                                GENERAL
+                            {% else %}
+                                CONDITIONAL
+                            {% endif %}
+                        </div>
+                        <div class="clue-text">
+                            {% if clue.clue_type.value == 1 %}
+                                Cell {{ clue.position }} has {{ clue.attribute }} = {{ clue.value }}
+                            {% elif clue.clue_type.value == 2 %}
+                                {{ clue.scope.capitalize() }} {{ clue.scope_index }} has {{ clue.count }} {{ clue.value }}s
+                            {% else %}
+                                If cell {{ clue.condition.position }} has {{ clue.condition.attribute }} = {{ clue.condition.value }}, 
+                                then cell {{ clue.consequence.position }} has {{ clue.consequence.attribute }} = {{ clue.consequence.value }}
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Create the network visualization
+        function createNetwork() {
+            const container = document.getElementById('network-container');
+            console.log('Creating network visualization...');
+            
+            // Create nodes and edges from the clues
+            const nodes = new vis.DataSet();
+            const edges = new vis.DataSet();
+            
+            // Track which nodes we've already added to avoid duplicates
+            const addedNodes = new Set();
+            
+            // Helper function to add a node only if it doesn't exist
+            function addUniqueNode(nodeData) {
+                if (!addedNodes.has(nodeData.id)) {
+                    nodes.add(nodeData);
+                    addedNodes.add(nodeData.id);
+                    console.log('Added unique node:', nodeData.id);
+                } else {
+                    console.log('Skipped duplicate node:', nodeData.id);
+                }
+            }
+            
+            // Helper function to get shape emoji
+            function getShapeEmoji(shape) {
+                const shapeMap = {
+                    'square': '⬜',
+                    'circle': '⭕', 
+                    'triangle': '🔺',
+                    'heart': '❤️',
+                    'star': '⭐',
+                    'diamond': '💎'
+                };
+                return shapeMap[shape.toLowerCase()] || '❓';
+            }
+            
+            // Add explicit clue nodes (root level)
+            {% for clue in clues %}
+                {% if clue.clue_type.value == 1 %}
+                    console.log('Adding explicit clue node: {{ clue.position[0] }},{{ clue.position[1] }}');
+                    addUniqueNode({
+                        id: 'explicit_{{ clue.position[0] }}_{{ clue.position[1] }}_{{ clue.attribute }}',
+                        label: `Cell ({{ clue.position[0] }},{{ clue.position[1] }}) has {{ clue.attribute }} = {{ clue.value }}`,
+                        color: {
+                            background: '#ff6b6b',
+                            border: '#c0392b',
+                            highlight: {
+                                background: '#e74c3c',
+                                border: '#c0392b'
+                            }
+                        },
+                        font: { color: '#ffffff', size: 60, face: 'Arial', bold: true },
+                        shape: 'box',
+                        size: 30,
+                        level: 0,
+                        title: `🔴 EXPLICIT CLUE: Cell at Row {{ clue.position[0] }}, Column {{ clue.position[1] }}\nThis cell has {{ clue.attribute }} = {{ clue.value }}\nThis is a direct clue that starts the deduction chain.`
+                    });
+                {% endif %}
+            {% endfor %}
+            
+            // Add conditional clue nodes and edges
+            {% for clue in clues %}
+                {% if clue.clue_type.value == 3 %}
+                    console.log('Adding conditional clue: {{ clue.condition.position[0] }},{{ clue.condition.position[1] }} -> {{ clue.consequence.position[0] }},{{ clue.consequence.position[1] }}');
+                    
+                    // Add the conditional clue node
+                    addUniqueNode({
+                        id: 'conditional_{{ clue.consequence.position[0] }}_{{ clue.consequence.position[1] }}_{{ clue.consequence.attribute }}',
+                        label: `IF Cell ({{ clue.condition.position[0] }},{{ clue.condition.position[1] }}) has {{ clue.condition.attribute }} = {{ clue.condition.value }}\nTHEN Cell ({{ clue.consequence.position[0] }},{{ clue.consequence.position[1] }}) has {{ clue.consequence.attribute }} = {{ clue.consequence.value }}`,
+                        color: {
+                            background: '#3498db',
+                            border: '#2980b9',
+                            highlight: {
+                                background: '#5dade2',
+                                border: '#2980b9'
+                            }
+                        },
+                        font: { color: '#ffffff', size: 60, face: 'Arial', bold: true },
+                        shape: 'box',
+                        size: 30,
+                        level: 1,
+                        title: `🔵 CONDITIONAL CLUE: Cell at Row {{ clue.consequence.position[0] }}, Column {{ clue.consequence.position[1] }}\nThis cell has {{ clue.consequence.attribute }} = {{ clue.consequence.value }}\nThis is deduced from: IF Cell ({{ clue.condition.position[0] }},{{ clue.condition.position[1] }}) has {{ clue.condition.attribute }} = {{ clue.condition.value }}`
+                    });
+                    
+                    // Add edge from condition to consequence
+                    // Create a more flexible connection system
+                    const toId_{{ loop.index }} = 'conditional_{{ clue.consequence.position[0] }}_{{ clue.consequence.position[1] }}_{{ clue.consequence.attribute }}';
+                    
+                    // Check if the source node exists, if not, try alternative IDs
+                    let actualFromId_{{ loop.index }} = 'explicit_{{ clue.condition.position[0] }}_{{ clue.condition.position[1] }}_{{ clue.condition.attribute }}';
+                    const possibleFromIds_{{ loop.index }} = [
+                        'explicit_{{ clue.condition.position[0] }}_{{ clue.condition.position[1] }}_{{ clue.condition.attribute }}',
+                        'conditional_{{ clue.condition.position[0] }}_{{ clue.condition.position[1] }}_{{ clue.condition.attribute }}'
+                    ];
+                    
+                    // Use the first available source node
+                    for (let id of possibleFromIds_{{ loop.index }}) {
+                        if (nodes.get(id)) {
+                            actualFromId_{{ loop.index }} = id;
+                            break;
+                        }
+                    }
+                    
+                    // Only add edge if we found a valid source node
+                    if (nodes.get(actualFromId_{{ loop.index }})) {
+                    
+                    console.log('Adding edge from:', actualFromId_{{ loop.index }}, 'to:', toId_{{ loop.index }});
+                    
+                    edges.add({
+                        from: actualFromId_{{ loop.index }},
+                        to: toId_{{ loop.index }},
+                        label: `IF {{ clue.condition.attribute.title() }} = {{ clue.condition.value }}`,
+                        color: { 
+                            color: '#3498db', 
+                            highlight: '#2980b9',
+                            hover: '#5dade2'
+                        },
+                        arrows: 'to',
+                        width: 3,
+                        font: { color: '#2c3e50', size: 10, face: 'Arial' },
+                        title: `🔵 CONDITIONAL DEPENDENCY:\nIF: Cell ({{ clue.condition.position[0] }},{{ clue.condition.position[1] }}) has {{ clue.condition.attribute }} = {{ clue.condition.value }}\nTHEN: Cell ({{ clue.consequence.position[0] }},{{ clue.consequence.position[1] }}) has {{ clue.consequence.attribute }} = {{ clue.consequence.value }}`
+                    });
+                    }
+                {% endif %}
+            {% endfor %}
+            
+            // Add constraint clue nodes (simplified)
+            {% for clue in clues %}
+                {% if clue.clue_type.value == 2 %}
+                    {% if clue.scope == 'row' %}
+                        {% set clue_id = 'row_' + clue.scope_index|string %}
+                        addUniqueNode({
+                            id: '{{ clue_id }}',
+                            label: `Row {{ clue.scope_index }} has {{ clue.count }} {{ clue.value }}s`,
+                            color: {
+                                background: '#f39c12',
+                                border: '#d68910',
+                                highlight: {
+                                    background: '#e67e22',
+                                    border: '#d68910'
+                                }
+                            },
+                            font: { color: '#2c3e50', size: 60, face: 'Arial', bold: true },
+                            shape: 'box',
+                            size: 25,
+                            level: 2,
+                            title: `🟠 ROW CONSTRAINT: Row {{ clue.scope_index }}\nThis row contains exactly {{ clue.count }} cells with the shape "{{ clue.value }}"\nThis is a general rule that helps deduce cell values.`
+                        });
+                    {% elif clue.scope == 'col' %}
+                        {% set clue_id = 'col_' + clue.scope_index|string %}
+                        addUniqueNode({
+                            id: '{{ clue_id }}',
+                            label: `Column {{ clue.scope_index }} has {{ clue.count }} {{ clue.value }}s`,
+                            color: {
+                                background: '#9b59b6',
+                                border: '#8e44ad',
+                                highlight: {
+                                    background: '#a569bd',
+                                    border: '#8e44ad'
+                                }
+                            },
+                            font: { color: '#ffffff', size: 60, face: 'Arial', bold: true },
+                            shape: 'box',
+                            size: 25,
+                            level: 2,
+                            title: `🟣 COLUMN CONSTRAINT: Column {{ clue.scope_index }}\nThis column contains exactly {{ clue.count }} cells with the shape "{{ clue.value }}"\nThis is a general rule that helps deduce cell values.`
+                        });
+                    {% endif %}
+                {% endif %}
+            {% endfor %}
+            
+            // Add connections from conditional clues to constraint clues
+            {% for clue in clues %}
+                {% if clue.clue_type.value == 3 %}
+                    {% for constraint_clue in clues %}
+                        {% if constraint_clue.clue_type.value == 2 %}
+                            {% if constraint_clue.scope == 'row' and constraint_clue.scope_index == clue.consequence.position[0] %}
+                                edges.add({
+                                    from: 'conditional_{{ clue.consequence.position[0] }}_{{ clue.consequence.position[1] }}_{{ clue.consequence.attribute }}',
+                                    to: 'row_{{ constraint_clue.scope_index }}',
+                                    label: 'Affects',
+                                    color: { 
+                                        color: '#95a5a6', 
+                                        highlight: '#7f8c8d',
+                                        hover: '#bdc3c7'
+                                    },
+                                    arrows: 'to',
+                                    width: 2,
+                                    font: { color: '#2c3e50', size: 10, face: 'Arial' },
+                                    title: `🔗 CONSTRAINT CONNECTION:\nThe conditional clue affects this row constraint\nRow {{ constraint_clue.scope_index }} must have {{ constraint_clue.count }} {{ constraint_clue.value }}s`
+                                });
+                            {% elif constraint_clue.scope == 'col' and constraint_clue.scope_index == clue.consequence.position[1] %}
+                                edges.add({
+                                    from: 'conditional_{{ clue.consequence.position[0] }}_{{ clue.consequence.position[1] }}_{{ clue.consequence.attribute }}',
+                                    to: 'col_{{ constraint_clue.scope_index }}',
+                                    label: 'Affects',
+                                    color: { 
+                                        color: '#95a5a6', 
+                                        highlight: '#7f8c8d',
+                                        hover: '#bdc3c7'
+                                    },
+                                    arrows: 'to',
+                                    width: 2,
+                                    font: { color: '#2c3e50', size: 10, face: 'Arial' },
+                                    title: `🔗 CONSTRAINT CONNECTION:\nThe conditional clue affects this column constraint\nColumn {{ constraint_clue.scope_index }} must have {{ constraint_clue.count }} {{ constraint_clue.value }}s`
+                                });
+                            {% endif %}
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+            {% endfor %}
+            
+            console.log('Total nodes:', nodes.length);
+            console.log('Total edges:', edges.length);
+            console.log('Node IDs:', nodes.getIds());
+            console.log('Edge data:', edges.get());
+            
+            // Update debug info
+            const debugDetails = document.getElementById('debug-details');
+            if (debugDetails) {
+                debugDetails.innerHTML = `Nodes: ${nodes.length}, Edges: ${edges.length}<br>Node IDs: ${nodes.getIds().join(', ')}`;
+            }
+            
+            // Create the network with hierarchical tree layout
+            const data = { nodes: nodes, edges: edges };
+            const options = {
+                physics: {
+                    enabled: false // Disable physics for clean tree layout
+                },
+                interaction: {
+                    hover: true,
+                    tooltipDelay: 200,
+                    dragNodes: true,
+                    dragView: true,
+                    zoomView: true
+                },
+                layout: {
+                    hierarchical: {
+                        enabled: true,
+                        direction: 'UD', // Top to bottom
+                        sortMethod: 'directed',
+                        nodeSpacing: 1200, // Even more horizontal spacing for large nodes
+                        levelSeparation: 500, // Massive vertical spacing
+                        treeSpacing: 600, // Massive spacing between trees
+                        blockShifting: true,
+                        edgeMinimization: true,
+                        parentCentralization: true
+                    }
+                },
+                nodes: {
+                    font: {
+                        size: 60,
+                        face: 'Arial'
+                    },
+                    widthConstraint: {
+                        minimum: 600,
+                        maximum: 800
+                    },
+                    heightConstraint: {
+                        minimum: 200,
+                        maximum: 300
+                    },
+                    margin: 30
+                },
+                edges: {
+                    font: {
+                        size: 40,
+                        face: 'Arial'
+                    }
+                }
+            };
+            
+            const network = new vis.Network(container, data, options);
+            console.log('Network created successfully');
+        }
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check if vis is loaded
+            if (typeof vis === 'undefined') {
+                console.error('Vis.js library not loaded!');
+                document.getElementById('network-container').innerHTML = 
+                    '<div style="text-align: center; padding: 50px; color: #666;">' +
+                    '<h3>Visualization Library Not Loaded</h3>' +
+                    '<p>Please check your internet connection and refresh the page.</p>' +
+                    '</div>';
+                return;
+            }
+            
+            try {
+                createNetwork();
+            } catch (error) {
+                console.error('Error creating network:', error);
+                document.getElementById('network-container').innerHTML = 
+                    '<div style="text-align: center; padding: 50px; color: #666;">' +
+                    '<h3>Error Creating Visualization</h3>' +
+                    '<p>Check the browser console for details.</p>' +
+                    '</div>';
+            }
+        });
+    </script>
+</body>
+</html>

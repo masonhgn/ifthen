@@ -1,0 +1,23 @@
+name: geckojump
+services:
+- name: web
+  source_dir: /
+  github:
+    repo: your-username/geckojump
+    branch: main
+  run_command: python app_new.py
+  environment_slug: python
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  http_port: 5000
+  envs:
+  - key: SECRET_KEY
+    value: your-super-secret-key-change-this-in-production
+  - key: DEBUG
+    value: "False"
+  - key: HOST
+    value: "0.0.0.0"
+  - key: PORT
+    value: "5000"
+  - key: ALLOWED_ORIGINS
+    value: "https://geckojump.com,https://www.geckojump.com"

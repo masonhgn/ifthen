@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeckoJump - Software & Games</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog.css') }}">
+</head>
+<body>
+    <div class="container">
+        <nav class="navbar">
+            <div class="nav-brand">
+                <div class="logo">🦎</div>
+                <span class="brand-name">GeckoJump</span>
+            </div>
+            <div class="nav-links">
+                <a href="/" class="nav-link active">Home</a>
+                <a href="/games" class="nav-link">Games</a>
+            </div>
+        </nav>
+        
+        <main class="home-content">
+            <div class="center-text">
+                <h1 id="typewriter-text">Some decent games</h1>
+                <p>Check out the games tab if you're into that sort of thing</p>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Typewriter effect
+        const texts = ['Some decent games', 'Some decent software'];
+        let textIndex = 0;
+        let charIndex = 0;
+        let isDeleting = false;
+        let typeSpeed = 100; // milliseconds
+        let deleteSpeed = 50;
+        let pauseTime = 2000; // pause between texts
+
+        function typeWriter() {
+            const element = document.getElementById('typewriter-text');
+            const currentText = texts[textIndex];
+
+            if (isDeleting) {
+                // Delete characters
+                element.textContent = currentText.substring(0, charIndex - 1);
+                charIndex--;
+                typeSpeed = deleteSpeed;
+            } else {
+                // Type characters
+                element.textContent = currentText.substring(0, charIndex + 1);
+                charIndex++;
+                typeSpeed = 100;
+            }
+
+            if (!isDeleting && charIndex === currentText.length) {
+                // Finished typing, pause then start deleting
+                typeSpeed = pauseTime;
+                isDeleting = true;
+            } else if (isDeleting && charIndex === 0) {
+                // Finished deleting, move to next text
+                isDeleting = false;
+                textIndex = (textIndex + 1) % texts.length;
+                typeSpeed = 100;
+            }
+
+            setTimeout(typeWriter, typeSpeed);
+        }
+
+        // Start the typewriter effect when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            typeWriter();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Games - GeckoJump</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog.css') }}">
+</head>
+<body>
+    <div class="container">
+        <nav class="navbar">
+            <div class="nav-brand">
+                <div class="logo">🦎</div>
+                <span class="brand-name">GeckoJump</span>
+            </div>
+            <div class="nav-links">
+                <a href="/" class="nav-link">Home</a>
+                <a href="/games" class="nav-link active">Games</a>
+            </div>
+        </nav>
+        
+        <main class="games-page">
+            <div class="games-header">
+                <h1>Games</h1>
+                <p>Pick your poison</p>
+            </div>
+            
+            <div class="games-grid-small">
+                {% for game in games %}
+                <div class="game-card-small {{ game.name }}" onclick="window.location.href='{{ game.url_prefix }}'">
+                    <div class="game-icon-small">{{ game.icon }}</div>
+                    <h3 class="game-title-small">{{ game.display_name }}</h3>
+                    <p class="game-description-small">{{ game.description }}</p>
+                    <div class="play-button-small">
+                        <button class="btn-small">Play</button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            
+            {% if not games %}
+            <div class="no-games">
+                <h2>No games available</h2>
+                <p>Check back later for new games!</p>
+            </div>
+            {% endif %}
+        </main>
+    </div>
+</body>
+</html>
